@@ -107,12 +107,16 @@ static void update_time() {
 }
 
 static void check_alarm() {
-    // Проверка отложенного будильника
     if (snooze_active) {
         unsigned long snooze_elapsed = millis() - snooze_start;
         if (snooze_elapsed >= (unsigned long)SNOOZE_MINUTES * 60 * 1000UL) {
             snooze_active = false;
             alarm_triggered = false;
+            // Сразу срабатываем
+            current_state = DS_ALARM_RINGING;
+            last_buzzer = millis();
+            buzzer_state = false;
+            lcd_clear();
         }
         return;
     }
@@ -149,7 +153,18 @@ static void do_snooze() {
     noTone(BUZZER);
     buzzer_state = false;
     set_led(0, 1, 0);
+    
+    // Показываем на экране что snooze активен
+    char buf[17];
     lcd_clear();
+    lcd_set_cursor(0, 0);
+    lcd_print("SNOOZE ACTIVE   ");
+    lcd_set_cursor(1, 0);
+    sprintf(buf, "Ring in %d min   ", SNOOZE_MINUTES);
+    lcd_print(buf);
+    delay(2000);
+    lcd_clear();
+    
     btn1_pressed = false;
     btn2_pressed = false;
     btn3_pressed = false;
