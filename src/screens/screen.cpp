@@ -41,7 +41,7 @@ void screens_init() {
 
     lcd_clear();
     lcd_set_cursor(0, 0);
-    lcd_print("  BUDILNIK");
+    lcd_print("  Alarm clock");
     lcd_set_cursor(1, 0);
     lcd_print("  Starting...");
     delay(2000);
