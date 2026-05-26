@@ -14,10 +14,8 @@ void clock_init() {
     rtc.SetIsWriteProtected(false);
     rtc.SetIsRunning(true);
 
-    // Читаем время — не перезаписываем при каждом запуске
     RtcDateTime dt = rtc.GetDateTime();
 
-    // Только если время невалидное — устанавливаем начальное
     if (!rtc.IsDateTimeValid() ||
         dt.Hour() > 23 || dt.Minute() > 59 || dt.Second() > 59 ||
         dt.Day() < 1 || dt.Day() > 31 || dt.Month() < 1 || dt.Month() > 12) {
