@@ -12,36 +12,37 @@
 extern void set_led(int r, int g, int b);
 extern volatile byte btn_state;
 
-enum DisplayState {
-    DS_TIME, DS_DATE, DS_TEMP, DS_ALARM,
-    DS_SET_HOUR, DS_SET_MINUTE,
-    DS_SET_DAY, DS_SET_MONTH, DS_SET_YEAR,
-    DS_SET_ALARM_HOUR, DS_SET_ALARM_MINUTE,
-    DS_ALARM_RINGING,
-    DS_STOPWATCH,
-    DS_TIMER, DS_SET_TIMER_MIN, DS_SET_TIMER_SEC
-};
+extern int alarm_hour;
+extern int alarm_minute;
+extern bool alarm_enabled;
+extern bool alarm_triggered;
+extern bool snooze_active;
+extern unsigned long snooze_start;
 
-static DisplayState current_state = DS_TIME;
+extern void alarm_load();
+extern void alarm_save();
+extern void check_alarm();
+extern void do_stop_alarm();
+extern void do_snooze();
 
-static int hours = 0, minutes = 0, seconds = 0;
-static int day = 1, month = 1, year = 2026;
 
-static int alarm_hour = 7, alarm_minute = 0;
-static bool alarm_enabled = true;
-static bool alarm_triggered = false;
+
+DisplayState current_state = DS_TIME;
+
+int hours = 0, minutes = 0, seconds = 0;
+int day = 1, month = 1, year = 2026;
 
 static float temperature = 0;
 static float humidity = 0;
 
-static unsigned long last_update = 0;
-static unsigned long last_blink = 0;
-static unsigned long last_buzzer = 0;
-static bool blink_state = false;
-static bool buzzer_state = false;
+unsigned long last_update = 0;
+unsigned long last_blink = 0;
+unsigned long last_buzzer = 0;
+bool blink_state = false;
+bool buzzer_state = false;
 
-static bool btn1_pressed = false, btn2_pressed = false;
-static bool btn3_pressed = false, btn4_pressed = false;
+bool btn1_pressed = false, btn2_pressed = false;
+bool btn3_pressed = false, btn4_pressed = false;
 
 static unsigned long sw_start = 0;
 static unsigned long sw_elapsed = 0;
@@ -56,10 +57,6 @@ static bool timer_finished = false;
 static unsigned long timer_finish_buzzer = 0;
 static bool timer_finish_buzzer_state = false;
 
-#define SNOOZE_MINUTES 5
-static bool snooze_active = false;
-static unsigned long snooze_start = 0;
-
 static int get_days_in_month(int m, int y) {
     if (m == 2) {
         if ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) return 29;
@@ -67,18 +64,6 @@ static int get_days_in_month(int m, int y) {
     }
     if (m == 4 || m == 6 || m == 9 || m == 11) return 30;
     return 31;
-}
-
-static void alarm_load() {
-    alarm_hour = EEPROM.read(EEPROM_ALARM_HOUR);
-    alarm_minute = EEPROM.read(EEPROM_ALARM_MINUTE);
-    if (alarm_hour > 23) alarm_hour = 7;
-    if (alarm_minute > 59) alarm_minute = 0;
-}
-
-static void alarm_save() {
-    EEPROM.update(EEPROM_ALARM_HOUR, alarm_hour);
-    EEPROM.update(EEPROM_ALARM_MINUTE, alarm_minute);
 }
 
 static void update_time() {
@@ -96,69 +81,6 @@ static void update_time() {
     month = t.month;
     year = t.year;
 }
-
-static void check_alarm() {
-    if (snooze_active) {
-        unsigned long snooze_elapsed = millis() - snooze_start;
-        if (snooze_elapsed >= (unsigned long)SNOOZE_MINUTES * 60 * 1000UL) {
-            snooze_active = false;
-            alarm_triggered = false;
-            current_state = DS_ALARM_RINGING;
-            last_buzzer = millis();
-            buzzer_state = false;
-            lcd_clear();
-        }
-        return;
-    }
-
-    if (!alarm_enabled || alarm_triggered) return;
-    if (hours == alarm_hour && minutes == alarm_minute && seconds == 0) {
-        alarm_triggered = true;
-        current_state = DS_ALARM_RINGING;
-        last_buzzer = millis();
-        buzzer_state = false;
-        lcd_clear();
-    }
-}
-
-void do_stop_alarm() {
-    alarm_triggered = true;
-    current_state = DS_TIME;
-    noTone(BUZZER);
-    buzzer_state = false;
-    set_led(0, 1, 0);
-    lcd_clear();
-    btn1_pressed = false;
-    btn2_pressed = false;
-    btn3_pressed = false;
-    btn4_pressed = false;
-}
-
-static void do_snooze() {
-    snooze_active = true;
-    snooze_start = millis();
-    alarm_triggered = true;
-    current_state = DS_TIME;
-    noTone(BUZZER);
-    buzzer_state = false;
-    set_led(0, 1, 0);
-
-    char buf[17];
-    lcd_clear();
-    lcd_set_cursor(0, 0);
-    lcd_print("SNOOZE ACTIVE   ");
-    lcd_set_cursor(1, 0);
-    sprintf(buf, "Ring in %d min   ", SNOOZE_MINUTES);
-    lcd_print(buf);
-    delay(2000);
-    lcd_clear();
-
-    btn1_pressed = false;
-    btn2_pressed = false;
-    btn3_pressed = false;
-    btn4_pressed = false;
-}
-
 
 static void handle_mode() {
     switch (current_state) {
@@ -193,20 +115,20 @@ static void handle_up() {
             }
             break;
         case DS_TIMER:
-    if (timer_finished) {
-        timer_finished = false;
-        noTone(BUZZER);
-        set_led(0, 1, 0);
-    } else if (!timer_running) {
-        timer_duration = ((unsigned long)timer_set_min * 60 + timer_set_sec) * 1000UL;
-        if (timer_duration > 0) {
-            timer_start = millis();
-            timer_running = true;
-        }
-    } else {
-        timer_running = false;
-    }
-    break;
+            if (timer_finished) {
+                timer_finished = false;
+                noTone(BUZZER);
+                set_led(0, 1, 0);
+            } else if (!timer_running) {
+                timer_duration = ((unsigned long)timer_set_min * 60 + timer_set_sec) * 1000UL;
+                if (timer_duration > 0) {
+                    timer_start = millis();
+                    timer_running = true;
+                }
+            } else {
+                timer_running = false;
+            }
+            break;
         default: break;
     }
 }
@@ -322,15 +244,15 @@ static void handle_buttons() {
     bool btn4 = (btn_state & BTN4_PRESSED) != 0;
 
     if (current_state == DS_ALARM_RINGING) {
-    if (btn3 && !btn3_pressed) {
-        btn3_pressed = true;
-        do_snooze();
-    } else if (!btn3) {
-        btn3_pressed = false;
+        if (btn3 && !btn3_pressed) {
+            btn3_pressed = true;
+            do_snooze();
+        } else if (!btn3) {
+            btn3_pressed = false;
+        }
+        if (btn1 || btn2 || btn4) do_stop_alarm();
+        return;
     }
-    if (btn1 || btn2 || btn4) do_stop_alarm();
-    return;
-}
 
     if (btn1 && !btn1_pressed) { btn1_pressed = true; handle_mode(); }
     else if (!btn1) btn1_pressed = false;
@@ -362,23 +284,13 @@ static void display_time() {
     lcd_print(buf);
 }
 
-static void display_date() {
-    char buf[17];
-    lcd_set_cursor(0, 0);
-    sprintf(buf, "%02d/%02d/%04d      ", day, month, year);
-    lcd_print(buf);
-    lcd_set_cursor(1, 0);
-    sprintf(buf, "%02d:%02d:%02d        ", hours, minutes, seconds);
-    lcd_print(buf);
-}
-
 static void display_temp() {
     char buf[17];
     lcd_set_cursor(0, 0);
     sprintf(buf, "Temp:%dC        ", (int)temperature);
     lcd_print(buf);
     lcd_set_cursor(1, 0);
-    sprintf(buf, "Himidity:%d ", (int)humidity);
+    sprintf(buf, "Humidity:%d%%   ", (int)humidity);
     lcd_print(buf);
 }
 
@@ -431,7 +343,7 @@ static void display_set_date(bool bd, bool bm, bool by) {
 static void display_set_alarm(bool bh, bool bm) {
     char buf[17];
     lcd_set_cursor(0, 0);
-    sprintf(buf, "SET ALARM ");
+    sprintf(buf, "SET ALARM       ");
     lcd_print(buf);
     lcd_set_cursor(1, 0);
     if (!bh || blink_state) sprintf(buf, "%02d", alarm_hour);
@@ -458,16 +370,14 @@ static void display_alarm_ringing() {
 static void display_stopwatch() {
     char buf[17];
     unsigned long elapsed = sw_running ? (millis() - sw_start) : sw_elapsed;
-
     unsigned long total_sec = elapsed / 1000;
-    unsigned long ms = (elapsed % 1000) / 10; // сотые
+    unsigned long ms = (elapsed % 1000) / 10;
     unsigned long sw_min = total_sec / 60;
     unsigned long sw_sec = total_sec % 60;
 
     lcd_set_cursor(0, 0);
-    sprintf(buf, "STOPWATCH ");
+    sprintf(buf, "STOPWATCH       ");
     lcd_print(buf);
-
     lcd_set_cursor(1, 0);
     if (sw_min == 0) {
         sprintf(buf, "%02lu.%02lu sec      ", sw_sec, ms);
@@ -480,9 +390,8 @@ static void display_stopwatch() {
 static void display_timer() {
     char buf[17];
     lcd_set_cursor(0, 0);
-
     if (timer_finished) {
-        if (blink_state) sprintf(buf, "** DONE! **   ");
+        if (blink_state) sprintf(buf, "** DONE! **     ");
         else sprintf(buf, "                ");
         lcd_print(buf);
         lcd_set_cursor(1, 0);
@@ -490,10 +399,8 @@ static void display_timer() {
         lcd_print(buf);
         return;
     }
-
-    sprintf(buf, "TIMER  %s       ", timer_running ? "RUN" : " ");
+    sprintf(buf, "TIMER  %s       ", timer_running ? "RUN" : "   ");
     lcd_print(buf);
-
     lcd_set_cursor(1, 0);
     if (timer_running) {
         unsigned long elapsed = millis() - timer_start;
@@ -527,25 +434,24 @@ static void display_set_timer(bool bm, bool bs) {
 
 static void update_display() {
     switch (current_state) {
-        case DS_TIME:            display_time(); break;
-        case DS_DATE:            display_time(); break;
-        case DS_TEMP:            display_temp(); break;
-        case DS_ALARM:           display_alarm(); break;
-        case DS_SET_HOUR:        display_set_time(true, false); break;
-        case DS_SET_MINUTE:      display_set_time(false, true); break;
-        case DS_SET_DAY:         display_set_date(true, false, false); break;
-        case DS_SET_MONTH:       display_set_date(false, true, false); break;
-        case DS_SET_YEAR:        display_set_date(false, false, true); break;
-        case DS_SET_ALARM_HOUR:  display_set_alarm(true, false); break;
-        case DS_SET_ALARM_MINUTE:display_set_alarm(false, true); break;
-        case DS_ALARM_RINGING:   display_alarm_ringing(); break;
-        case DS_STOPWATCH:       display_stopwatch(); break;
-        case DS_TIMER:           display_timer(); break;
-        case DS_SET_TIMER_MIN:   display_set_timer(true, false); break;
-        case DS_SET_TIMER_SEC:   display_set_timer(false, true); break;
+        case DS_TIME:             display_time(); break;
+        case DS_DATE:             display_time(); break;
+        case DS_TEMP:             display_temp(); break;
+        case DS_ALARM:            display_alarm(); break;
+        case DS_SET_HOUR:         display_set_time(true, false); break;
+        case DS_SET_MINUTE:       display_set_time(false, true); break;
+        case DS_SET_DAY:          display_set_date(true, false, false); break;
+        case DS_SET_MONTH:        display_set_date(false, true, false); break;
+        case DS_SET_YEAR:         display_set_date(false, false, true); break;
+        case DS_SET_ALARM_HOUR:   display_set_alarm(true, false); break;
+        case DS_SET_ALARM_MINUTE: display_set_alarm(false, true); break;
+        case DS_ALARM_RINGING:    display_alarm_ringing(); break;
+        case DS_STOPWATCH:        display_stopwatch(); break;
+        case DS_TIMER:            display_timer(); break;
+        case DS_SET_TIMER_MIN:    display_set_timer(true, false); break;
+        case DS_SET_TIMER_SEC:    display_set_timer(false, true); break;
     }
 }
-
 
 enum screen clock_screen() {
     static bool initialized = false;
