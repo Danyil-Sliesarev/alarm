@@ -1,6 +1,8 @@
 #ifndef _SCREENS_H
 #define _SCREENS_H
 
+#include "context.h"
+
 enum DisplayState {
     DS_TIME, DS_DATE, DS_TEMP, DS_ALARM,
     DS_SET_HOUR, DS_SET_MINUTE,
@@ -20,6 +22,7 @@ enum screen {
     FACTORY_RESET_SCR
 };
 
+enum screen init_screen(struct context *ctx);
 void screens_init();
 enum screen clock_screen();
 enum screen alarm_screen();

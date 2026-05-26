@@ -6,20 +6,15 @@
 #include "sensors.h"
 #include "screens.h"
 #include "ir_wrapper.h"
+#include "context.h"
 
 volatile byte btn_state;
 
-extern void screens_init();
 extern void set_led(int r, int g, int b);
 
 int main() {
-    init();
-    Wire.begin();
-
-    screens_init();
-    ir_init();
-
-    enum screen current = CLOCK_SCR;
+    struct context ctx;
+    enum screen current = INIT_SCR;
 
     for(;;) {
         btn_state = 0;
@@ -29,6 +24,9 @@ int main() {
         if (digitalRead(BTN4) == LOW) btn_state |= BTN4_PRESSED;
 
         switch(current) {
+            case INIT_SCR:
+                current = init_screen(&ctx);
+                break;
             case CLOCK_SCR:
                 current = clock_screen();
                 break;
